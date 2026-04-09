@@ -7,3 +7,126 @@ Original file is located at
     https://colab.research.google.com/drive/1vmSJuK_YoexxXb-98GUiEffsb3SacZuA
 """
 
+import pandas as pd
+import numpy as np
+
+def load_data():
+    orders = pd.read_csv('/content/drive/MyDrive/Project/olist_orders_dataset.csv')
+    order_items = pd.read_csv('/content/drive/MyDrive/Project/olist_order_items_dataset.csv')
+    customers = pd.read_csv('/content/drive/MyDrive/Project/olist_customers_dataset.csv')
+    sellers = pd.read_csv('/content/drive/MyDrive/Project/olist_sellers_dataset.csv')
+    return orders, order_items, customers, sellers
+
+def convert_dates(orders):
+    date_cols = [
+        'order_purchase_timestamp',
+        'order_approved_at',
+        'order_delivered_carrier_date',
+        'order_delivered_customer_date',
+        'order_estimated_delivery_date'
+    ]
+
+    for col in date_cols:
+        orders[col] = pd.to_datetime(orders[col])
+
+    return orders
+
+def create_time_features(orders):
+    # Approval delay
+    orders['approval_delay'] = (
+        orders['order_approved_at'] - orders['order_purchase_timestamp']
+    ).dt.days
+
+    # Estimated delivery time
+    orders['estimated_delivery_time'] = (
+        orders['order_estimated_delivery_date'] - orders['order_purchase_timestamp']
+    ).dt.days
+
+    # Day of week
+    orders['purchase_day_of_week'] = orders['order_purchase_timestamp'].dt.dayofweek
+
+    # Hour
+    orders['purchase_hour'] = orders['order_purchase_timestamp'].dt.hour
+
+    return orders
+
+def create_order_features(order_items):
+    agg = order_items.groupby('order_id').agg({
+        'order_item_id': 'count',
+        'price': 'sum',
+        'freight_value': 'sum'
+    }).reset_index()
+
+    agg.rename(columns={
+        'order_item_id': 'total_items',
+        'price': 'total_price',
+        'freight_value': 'total_freight_value'
+    }, inplace=True)
+
+    return agg
+
+def create_target(orders):
+    orders['is_delayed'] = (
+        orders['order_delivered_customer_date'] > orders['order_estimated_delivery_date']
+    ).astype(int)
+    return orders
+
+def merge_all(orders, order_agg, customers, sellers, order_items):
+    df = orders.merge(order_agg, on='order_id', how='left')
+    df = df.merge(customers[['customer_id', 'customer_state']], on='customer_id', how='left')
+
+    # get seller_id from order_items
+    df = df.merge(order_items[['order_id', 'seller_id']], on='order_id', how='left')
+
+    # add seller_state
+    df = df.merge(sellers[['seller_id', 'seller_state']], on='seller_id', how='left')
+
+    return df
+
+def final_selection(df):
+    return df[[
+        'approval_delay',
+        'estimated_delivery_time',
+        'purchase_day_of_week',
+        'purchase_hour',
+        'total_items',
+        'total_price',
+        'total_freight_value',
+        'customer_state',
+        'seller_state',
+        'is_delayed'
+    ]]
+
+def clean_data(df):
+    df = df.dropna()
+
+    # Encode categorical
+    df = pd.get_dummies(df, columns=['customer_state', 'seller_state'], drop_first=True)
+
+    return df
+
+def main():
+    orders, order_items, customers, sellers = load_data()
+
+    orders = convert_dates(orders)
+
+    orders = create_time_features(orders)
+
+    order_agg = create_order_features(order_items)
+
+    orders = create_target(orders)
+
+    df = merge_all(orders, order_agg, customers, sellers, order_items)
+
+    df = final_selection(df)
+
+    df = clean_data(df)
+
+    print("Final shape:", df.shape)
+
+    df.to_csv('final_poc_dataset.csv', index=False)
+
+
+if __name__ == "__main__":
+    main()
+
