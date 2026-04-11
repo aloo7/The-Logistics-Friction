@@ -1,6 +1,4 @@
-# The-Logistics-Friction
-
-# 📦 The Logistics Friction  
+# The-Logistics-Friction 
 ## Supply Chain Delay Oracle
 
 Predicting delivery delays in e-commerce logistics to improve customer trust and operational efficiency.
